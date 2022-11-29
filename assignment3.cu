@@ -19,6 +19,7 @@ using std::vector;
 const unsigned int SIZE = pow(2, 20); 
 const unsigned int N = 16; // This code is designed so N can be of the following values: {16, 32, 64, 128, 256, 512, 1024, 2048}
 const unsigned int BLOCK_SIZE = 128;  
+const float PRECISION = 0.005;
 
 vector<float> create_random_vector(unsigned int size) {
     std::random_device rd;
@@ -33,14 +34,13 @@ vector<float> create_random_vector(unsigned int size) {
 }
 
 void compute_cpu(vector<float>& vector, unsigned int pattern_size) {
-    float sqrt_of_2 = sqrt(2);
     for(int i = 0; i < vector.size(); i += pattern_size) {
         for(int j = 2; j < pattern_size; j *= 2) {
             for(int k = 0; k < pattern_size; k += j) {
                 int first_index = i + k;
                 int second_index = first_index + j / 2;
-                float first_result = (vector[first_index] + vector[second_index]) / sqrt_of_2;
-                float second_result = (vector[first_index] - vector[second_index]) / sqrt_of_2;
+                float first_result = (vector[first_index] + vector[second_index]) / sqrt(2);
+                float second_result = (vector[first_index] - vector[second_index]) / sqrt(2);
                 vector[first_index] = first_result;
                 vector[second_index] = second_result;
             }
@@ -48,27 +48,33 @@ void compute_cpu(vector<float>& vector, unsigned int pattern_size) {
     }
 }
 
-__global__ void computation_kernel(const int* const matrix, float* const A, int size) {
+__global__ void computation_kernel(float* const vector, int pattern_size) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    for(int j = 2; j < pattern_size; j *= 2) {
+        for(int k = 0; k < pattern_size; k += j) {
+            int first_index = i + k;
+            int second_index = first_index + j / 2;
+            float first_result = (vector[first_index] + vector[second_index]) / sqrtf(2);
+            float second_result = (vector[first_index] - vector[second_index]) / sqrtf(2);
+            vector[first_index] = first_result;
+            vector[second_index] = second_result;
+        }
+    }
 }
 
-void compute_gpu(vector<int>& matrix, vector<float>& A, unsigned int size, microseconds* const computation_duration) {
-    int* matrix_gpu;
-    unsigned int matrix_size_in_bytes = matrix.size() * sizeof(float);
-    cudaMalloc(&matrix_gpu, matrix_size_in_bytes);
-    cudaMemcpy(matrix_gpu, matrix.data(), matrix_size_in_bytes, cudaMemcpyHostToDevice); 
-
-    float* A_gpu;
-    unsigned int A_size_in_bytes = A.size() * sizeof(float);
-    cudaMalloc(&A_gpu, A_size_in_bytes);
-    cudaMemset(A_gpu, 0, A_size_in_bytes); 
-
+void compute_gpu(vector<float>& vector, unsigned int pattern_size, microseconds* const computation_duration) {
+    float* vector_gpu;
+    unsigned int vector_size_in_bytes = vector.size() * sizeof(float);
+    cudaMalloc(&vector_gpu, vector_size_in_bytes);
+    cudaMemcpy(vector_gpu, vector.data(), vector_size_in_bytes, cudaMemcpyHostToDevice); 
 
     dim3 dimBlock(BLOCK_SIZE);
-    dim3 dimGrid((N + dimBlock.x - 1) / dimBlock.x);
+    dim3 dimGrid((SIZE / N + dimBlock.x - 1) / dimBlock.x);
     
     auto start = steady_clock::now();
 
-    computation_kernel<<<dimGrid, dimBlock>>>(matrix_gpu, A_gpu, size);
+    computation_kernel<<<dimGrid, dimBlock>>>(vector_gpu, pattern_size);
 
     cudaDeviceSynchronize();
     auto end = steady_clock::now();
@@ -77,26 +83,37 @@ void compute_gpu(vector<int>& matrix, vector<float>& A, unsigned int size, micro
         *computation_duration = duration_cast<microseconds>(end - start);
     }
 
-    cudaMemcpy(A.data(), A_gpu, A_size_in_bytes, cudaMemcpyDeviceToHost); 
+    cudaMemcpy(vector.data(), vector_gpu, vector_size_in_bytes, cudaMemcpyDeviceToHost); 
 
-    cudaFree(matrix_gpu);
-    cudaFree(A_gpu);
+    cudaFree(vector_gpu);
 }
 
 int main() {
     vector<float> vector_cpu = create_random_vector(SIZE);
     vector<float> vector_gpu(vector_cpu);
 
-    auto start = steady_clock::now();
     compute_cpu(vector_cpu, N);
+
+    microseconds computation_duration;
+
+    auto start = steady_clock::now();
+    compute_gpu(vector_gpu, N, &computation_duration);
     auto end = steady_clock::now();
 
     microseconds total_duration = duration_cast<microseconds>(end - start);
 
-    bool equal = std::equal(vector_cpu.begin(), vector_cpu.end(), vector_gpu.begin());
-    if (!equal) {
+    int count = 0;
+    for (auto i = 0; i < vector_cpu.size(); i++) {
+        if (abs(vector_cpu[i] - vector_gpu[i]) > PRECISION) {
+            std::cout << vector_cpu[i] << " " << vector_gpu[i] << "\n";
+            count++;
+        }
+    }
+
+    if (count != 0) {
         std::cout << "There was an error: The results from the CPU and GPU doesn't match\n";
     }
 
     std::cout << "Total time: " << total_duration.count() << "us\n";
+    std::cout << "Computation time in the GPU: " << computation_duration.count() << "us\n";
 }
