@@ -24,7 +24,7 @@ const float PRECISION = 0.005;
 vector<float> create_random_vector(unsigned int size) {
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> distribution(-FLT_MAX, FLT_MAX);
+    std::uniform_real_distribution<float> distribution(-1000, 1000);
 
     vector<float> vector(size);
     for (int i = 0; i < size; i++) {
@@ -53,7 +53,7 @@ __global__ void computation_kernel(float* const vector, int pattern_size) {
     
     for(int step = 2; step < pattern_size; step *= 2) {
         for(int j = 0; j < pattern_size; j += step) {
-            int first_index = i + j;
+            int first_index = i * pattern_size + j;
             int second_index = first_index + step / 2;
             float first_result = (vector[first_index] + vector[second_index]) / sqrtf(2);
             float second_result = (vector[first_index] - vector[second_index]) / sqrtf(2);
