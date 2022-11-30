@@ -50,16 +50,30 @@ void compute_cpu(vector<float>& vector, unsigned int pattern_size) {
 
 __global__ void computation_kernel(float* const vector, int pattern_size) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    extern __shared__ float data[];
+    
+    for (int m = 0; m < pattern_size; m++) {
+        data[threadIdx.x * pattern_size + m] = vector[i * pattern_size + m];
+    }
+    
+    __syncthreads();
     
     for(int step = 2; step < pattern_size; step *= 2) {
         for(int j = 0; j < pattern_size; j += step) {
-            int first_index = i * pattern_size + j;
+            int first_index = threadIdx.x * pattern_size + j;
             int second_index = first_index + step / 2;
-            float first_result = (vector[first_index] + vector[second_index]) / sqrtf(2);
-            float second_result = (vector[first_index] - vector[second_index]) / sqrtf(2);
-            vector[first_index] = first_result;
-            vector[second_index] = second_result;
+            float first_result = (data[first_index] + data[second_index]) / sqrtf(2);
+            float second_result = (data[first_index] - data[second_index]) / sqrtf(2);
+            data[first_index] = first_result;
+            data[second_index] = second_result;
         }
+    }
+
+    __syncthreads();
+
+    for (int m = 0; m < pattern_size; m++) {
+        vector[i * pattern_size + m] = data[threadIdx.x * pattern_size + m];
     }
 }
 
@@ -74,7 +88,7 @@ void compute_gpu(vector<float>& vector, unsigned int pattern_size, microseconds*
     
     auto start = steady_clock::now();
 
-    computation_kernel<<<dimGrid, dimBlock>>>(vector_gpu, pattern_size);
+    computation_kernel<<<dimGrid, dimBlock, BLOCK_SIZE * pattern_size * sizeof(float)>>>(vector_gpu, pattern_size);
 
     cudaDeviceSynchronize();
     auto end = steady_clock::now();
