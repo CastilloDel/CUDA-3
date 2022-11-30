@@ -35,10 +35,10 @@ vector<float> create_random_vector(unsigned int size) {
 
 void compute_cpu(vector<float>& vector, unsigned int pattern_size) {
     for(int i = 0; i < vector.size(); i += pattern_size) {
-        for(int j = 2; j < pattern_size; j *= 2) {
-            for(int k = 0; k < pattern_size; k += j) {
-                int first_index = i + k;
-                int second_index = first_index + j / 2;
+        for(int step = 2; step < pattern_size; step *= 2) {
+            for(int j = 0; j < pattern_size; j += step) {
+                int first_index = i + j;
+                int second_index = first_index + step / 2;
                 float first_result = (vector[first_index] + vector[second_index]) / sqrt(2);
                 float second_result = (vector[first_index] - vector[second_index]) / sqrt(2);
                 vector[first_index] = first_result;
@@ -51,10 +51,10 @@ void compute_cpu(vector<float>& vector, unsigned int pattern_size) {
 __global__ void computation_kernel(float* const vector, int pattern_size) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     
-    for(int j = 2; j < pattern_size; j *= 2) {
-        for(int k = 0; k < pattern_size; k += j) {
-            int first_index = i + k;
-            int second_index = first_index + j / 2;
+    for(int step = 2; step < pattern_size; step *= 2) {
+        for(int j = 0; j < pattern_size; j += step) {
+            int first_index = i + j;
+            int second_index = first_index + step / 2;
             float first_result = (vector[first_index] + vector[second_index]) / sqrtf(2);
             float second_result = (vector[first_index] - vector[second_index]) / sqrtf(2);
             vector[first_index] = first_result;
