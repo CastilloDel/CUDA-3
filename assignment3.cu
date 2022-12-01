@@ -35,10 +35,10 @@ vector<float> create_random_vector(unsigned int size) {
 
 void compute_cpu(vector<float>& vector, unsigned int pattern_size) {
     for(int i = 0; i < vector.size(); i += pattern_size) {
-        for(int step = 2; step < pattern_size; step *= 2) {
-            for(int j = 0; j < pattern_size; j += step) {
-                int first_index = i + j;
-                int second_index = first_index + step / 2;
+        for(int step = 1; step < pattern_size; step *= 2) {
+            for(int jump = 0; jump < pattern_size; jump += step * 2) {
+                int first_index = i + jump;
+                int second_index = first_index + step;
                 float first_result = (vector[first_index] + vector[second_index]) / sqrt(2);
                 float second_result = (vector[first_index] - vector[second_index]) / sqrt(2);
                 vector[first_index] = first_result;
