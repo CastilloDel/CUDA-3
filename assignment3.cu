@@ -49,31 +49,31 @@ void compute_cpu(vector<float>& vector, unsigned int pattern_size) {
 }
 
 __global__ void computation_kernel(float* const vector, int pattern_size) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int pattern_position = blockIdx.x * pattern_size;
 
     extern __shared__ float data[];
     
-    for (int m = 0; m < pattern_size; m++) {
-        data[threadIdx.x * pattern_size + m] = vector[i * pattern_size + m];
+    for (int m = threadIdx.x; m < pattern_size; m += blockDim.x) {
+        data[m] = vector[pattern_position + m];
     }
     
     __syncthreads();
     
-    for(int step = 2; step < pattern_size; step *= 2) {
-        for(int j = 0; j < pattern_size; j += step) {
-            int first_index = threadIdx.x * pattern_size + j;
-            int second_index = first_index + step / 2;
+    for(int step = 1; step < pattern_size; step *= 2) {
+        int first_index = threadIdx.x * step * 2;
+        if (first_index < pattern_size) {
+            int second_index = first_index + step;
             float first_result = (data[first_index] + data[second_index]) / sqrtf(2);
             float second_result = (data[first_index] - data[second_index]) / sqrtf(2);
             data[first_index] = first_result;
             data[second_index] = second_result;
         }
     }
-
+    
     __syncthreads();
-
-    for (int m = 0; m < pattern_size; m++) {
-        vector[i * pattern_size + m] = data[threadIdx.x * pattern_size + m];
+    
+    for (int m = threadIdx.x; m < pattern_size; m += blockDim.x) {
+        vector[pattern_position + m] = data[m];
     }
 }
 
@@ -83,12 +83,13 @@ void compute_gpu(vector<float>& vector, unsigned int pattern_size, microseconds*
     cudaMalloc(&vector_gpu, vector_size_in_bytes);
     cudaMemcpy(vector_gpu, vector.data(), vector_size_in_bytes, cudaMemcpyHostToDevice); 
 
-    dim3 dimBlock(BLOCK_SIZE);
-    dim3 dimGrid((SIZE / N + dimBlock.x - 1) / dimBlock.x);
+    int block_size = pattern_size / 2;
+    dim3 dimBlock(block_size > BLOCK_SIZE ? BLOCK_SIZE : (block_size > 32 ? block_size : 32));
+    dim3 dimGrid(vector.size() / pattern_size);
     
     auto start = steady_clock::now();
 
-    computation_kernel<<<dimGrid, dimBlock, BLOCK_SIZE * pattern_size * sizeof(float)>>>(vector_gpu, pattern_size);
+    computation_kernel<<<dimGrid, dimBlock, pattern_size * sizeof(float)>>>(vector_gpu, pattern_size);
 
     cudaDeviceSynchronize();
     auto end = steady_clock::now();
