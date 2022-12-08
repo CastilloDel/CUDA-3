@@ -17,7 +17,7 @@ using std::chrono::duration_cast;
 using std::vector;
 
 const unsigned int SIZE = pow(2, 20); 
-const unsigned int N = 16; // This code is designed so N can be of the following values: {16, 32, 64, 128, 256, 512, 1024, 2048}
+const unsigned int N = 2048; // This code is designed so N can be of the following values: {16, 32, 64, 128, 256, 512, 1024, 2048}
 const unsigned int BLOCK_SIZE = 128;  
 const float PRECISION = 0.005;
 
@@ -60,17 +60,17 @@ __global__ void computation_kernel(float* const vector, int pattern_size) {
     __syncthreads();
     
     for(int step = 1; step < pattern_size; step *= 2) {
-        int first_index = threadIdx.x * step * 2;
-        if (first_index < pattern_size) {
+        for (int m = threadIdx.x; m < pattern_size / (step * 2); m += blockDim.x) {
+            int first_index = m * step * 2;
             int second_index = first_index + step;
             float first_result = (data[first_index] + data[second_index]) / sqrtf(2);
             float second_result = (data[first_index] - data[second_index]) / sqrtf(2);
             data[first_index] = first_result;
             data[second_index] = second_result;
         }
+        __syncthreads();
     }
     
-    __syncthreads();
     
     for (int m = threadIdx.x; m < pattern_size; m += blockDim.x) {
         vector[pattern_position + m] = data[m];
