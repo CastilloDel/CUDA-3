@@ -21,6 +21,8 @@ const unsigned int N = 2048; // This code is designed so N can be of the followi
 const unsigned int BLOCK_SIZE = 128;  
 const float PRECISION = 0.005;
 
+__constant__ int INDEXES[N];
+
 // Computes associativity indexes for the shuffle needed to achieve coalescence
 // Example for size 16
 // 0 8 4 12 2 10 6 14 1 9 5 13 3 11 7 15
@@ -66,13 +68,13 @@ void compute_cpu(vector<float>& vector, unsigned int pattern_size) {
     }
 }
 
-__global__ void computation_kernel(float* const vector, int pattern_size, const int* const indexes) {
+__global__ void computation_kernel(float* const vector, int pattern_size) {
     int pattern_position = blockIdx.x * pattern_size;
 
     extern __shared__ float data[];
     
     for (int m = threadIdx.x; m < pattern_size; m += blockDim.x) {
-        data[indexes[m]] = vector[pattern_position + m];
+        data[INDEXES[m]] = vector[pattern_position + m];
     }
     
     __syncthreads();
@@ -91,7 +93,7 @@ __global__ void computation_kernel(float* const vector, int pattern_size, const 
     
     
     for (int m = threadIdx.x; m < pattern_size; m += blockDim.x) {
-        vector[pattern_position + m] = data[indexes[m]];
+        vector[pattern_position + m] = data[INDEXES[m]];
     }
 }
 
@@ -101,10 +103,8 @@ void compute_gpu(vector<float>& v, const vector<int>& indexes, microseconds* con
     cudaMalloc(&v_gpu, v_size_in_bytes);
     cudaMemcpy(v_gpu, v.data(), v_size_in_bytes, cudaMemcpyHostToDevice); 
 
-    int* indexes_gpu;
     unsigned int indexes_size_in_bytes = indexes.size() * sizeof(int);
-    cudaMalloc(&indexes_gpu, indexes_size_in_bytes);
-    cudaMemcpy(indexes_gpu, indexes.data(), indexes_size_in_bytes, cudaMemcpyHostToDevice); 
+    cudaMemcpyToSymbol(INDEXES, indexes.data(), indexes_size_in_bytes);
 
     int pattern_size = indexes.size();
     int block_size = pattern_size / 2;
@@ -113,7 +113,7 @@ void compute_gpu(vector<float>& v, const vector<int>& indexes, microseconds* con
     
     auto start = steady_clock::now();
 
-    computation_kernel<<<dimGrid, dimBlock, pattern_size * sizeof(float)>>>(v_gpu, pattern_size, indexes_gpu);
+    computation_kernel<<<dimGrid, dimBlock, pattern_size * sizeof(float)>>>(v_gpu, pattern_size);
 
     cudaDeviceSynchronize();
     auto end = steady_clock::now();
@@ -125,7 +125,6 @@ void compute_gpu(vector<float>& v, const vector<int>& indexes, microseconds* con
     cudaMemcpy(v.data(), v_gpu, v_size_in_bytes, cudaMemcpyDeviceToHost); 
 
     cudaFree(v_gpu);
-    cudaFree(indexes_gpu);
 }
 
 int main() {
